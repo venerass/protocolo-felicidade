@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is accessing their own document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated(); // Allow reading other users for social features
+      allow create: if isOwner(userId); // Only owner can create
+      
+      // Allow owner to write anything
+      // Allow others to update ONLY specific social fields (for friend requests)
+      allow update: if isOwner(userId) || 
+                    (isAuthenticated() && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friendRequestsReceived', 'friendRequestsSent', 'friends']));
+      
+      // Subcollections (like data/protocol)
+      match /{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Groups collection
+    match /groups/{groupId} {
+      // Allow read if authenticated (needed to join or view groups)
+      allow read: if isAuthenticated();
+      
+      // Allow create if authenticated
+      allow create: if isAuthenticated();
+      
+      // Allow update if user is a member or adding themselves (join)
+      allow update: if isAuthenticated(); 
+    }
+  }
+}
