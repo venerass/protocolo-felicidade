@@ -4,6 +4,8 @@ import {
   getAuth, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut, 
   onAuthStateChanged,
   updateProfile,
@@ -102,6 +104,33 @@ export const firebaseService = {
         uid: userCredential.user.uid,
         email: userCredential.user.email,
         displayName: userCredential.user.displayName
+    };
+  },
+
+  loginWithGoogle: async () => {
+    if (!auth || !db) throw new Error("Firebase not initialized. Check API Keys.");
+    const provider = new GoogleAuthProvider();
+    
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+
+    // Check if user doc exists, if not create it
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    
+    if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', user.uid), {
+            email: user.email?.toLowerCase(),
+            name: user.displayName || 'Usuário',
+            createdAt: new Date().toISOString(),
+            stats: { score: 0, streak: 0 },
+            friends: []
+        });
+    }
+
+    return {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName
     };
   },
 
