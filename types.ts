@@ -19,8 +19,8 @@ export interface Habit {
   title: string;
   category: Category;
   frequencyType: FrequencyType;
-  targetCount: number; 
-  unit: string; 
+  targetCount: number;
+  unit: string;
   description?: string;
   scienceTip?: string;
   enabled: boolean;
@@ -36,17 +36,17 @@ export interface SurveyAnswers {
   stressLevel: number; // 1-10
   activityLevel: 'sedentary' | 'moderate' | 'active';
   dietQuality: 'poor' | 'average' | 'good';
-  
+
   // Social
   relationshipStatus: 'single' | 'dating' | 'married';
   socialBattery: 'introvert' | 'extrovert' | 'ambivert';
-  
+
   // Vices
   smokes: boolean;
   alcoholFreq: 'never' | 'socially' | 'often';
   cannabisUser: boolean;
   screenTimeIssue: boolean;
-  
+
   // Goals
   primaryGoals: string[]; // Array of selected goals: 'energy' | 'peace' | 'connection' | 'discipline'
 }
@@ -64,18 +64,19 @@ export interface UserProfile {
 }
 
 export interface Group {
-    id: string;
-    name: string;
-    description?: string;
-    members: string[]; // User IDs
-    createdBy: string; // User ID
-    createdAt: string;
-    inviteCode: string; // Unique code for joining
+  id: string;
+  name: string;
+  description?: string;
+  members: string[]; // User IDs
+  createdBy: string; // User ID
+  createdAt: string;
+  inviteCode: string; // Unique code for joining
 }
 
 export interface DailyLog {
   [date: string]: {
-    [habitId: string]: number | boolean; // boolean for check, number for count
+    mood?: number; // 1-5 scale
+    [habitId: string]: number | boolean | undefined; // boolean for check, number for count
   };
 }
 
@@ -88,9 +89,9 @@ export interface BackupData {
 
 // Abstract Auth User to decouple from Firebase types
 export interface AuthUser {
-    uid: string;
-    email: string | null;
-    displayName: string | null;
+  uid: string;
+  email: string | null;
+  displayName: string | null;
 }
 
 export type View = 'dashboard' | 'analytics' | 'social' | 'coach' | 'onboarding' | 'settings';

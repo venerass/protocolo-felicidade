@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Trophy, Share2, UserPlus, Search, AlertCircle, User as UserIcon, UserCheck, X, Eye, Users, Plus, Hash } from 'lucide-react';
-import { DailyLog, Habit, UserProfile, FrequencyType } from '../types';
+import { DailyLog, Habit, UserProfile, FrequencyType, Category } from '../types';
 import { firebaseService } from '../services/firebase';
 
 interface Props {
@@ -17,11 +17,6 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
     const [userGroups, setUserGroups] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Mode: 'friends' | 'groups'
-    const [viewMode, setViewMode] = useState<'friends' | 'groups'>('friends');
-    // If viewing a specific group
-    const [activeGroup, setActiveGroup] = useState<any | null>(null);
-
     // Friend Invite related states
     const [addEmail, setAddEmail] = useState('');
     const [addLoading, setAddLoading] = useState(false);
@@ -32,11 +27,11 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
     const [groupCode, setGroupCode] = useState('');
     const [groupName, setGroupName] = useState('');
     const [groupDesc, setGroupDesc] = useState('');
-    const [isCreatingGroup, setIsCreatingGroup] = useState(false);
     const [groupActionLoading, setGroupActionLoading] = useState(false);
     const [groupMessage, setGroupMessage] = useState({ type: '', text: '' });
+    const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
-    // Calculate User's Real Score locally
+    // Calculate User's Real Score locally (FIXED FOR ALL HABIT TYPES)
     const userStats = useMemo(() => {
         const today = new Date();
         let totalScore = 0;
@@ -54,8 +49,21 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
                 let achievedWeight = 0;
 
                 dailyHabits.forEach(h => {
-                    totalWeight += (h.weight || 2);
-                    if (dayLogs[h.id]) achievedWeight += (h.weight || 2);
+                    const weight = h.weight || 2;
+                    totalWeight += weight;
+                    const isDone = !!dayLogs[h.id];
+
+                    // Fix: Handle all three types correctly
+                    if (h.unit === 'max_x') {
+                        // Limit habit: NOT done = good
+                        if (!isDone) achievedWeight += weight;
+                    } else if (h.category === Category.VICIOS) {
+                        // Abstinence: done (checked) = good
+                        if (isDone) achievedWeight += weight;
+                    } else {
+                        // Regular: done = good
+                        if (isDone) achievedWeight += weight;
+                    }
                 });
 
                 habits.filter(h => h.frequencyType === FrequencyType.WEEKLY).forEach(h => {
@@ -107,7 +115,23 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
                     setFriends(friendsData);
                     setReceivedRequests(received);
                     setSentRequests(sent);
-                    setUserGroups(groupsData);
+
+                    // Load leaderboards for all groups automatically
+                    const groupsWithLeaderboards = await Promise.all(
+                        groupsData.map(async (group: any) => {
+                            try {
+                                const members = await firebaseService.getGroupLeaderboard(group.id);
+                                const enhancedMembers = members.map((m: any) => ({ ...m, isMe: m.id === uid }));
+                                enhancedMembers.sort((a: any, b: any) => b.score - a.score);
+                                return { ...group, leaderboard: enhancedMembers };
+                            } catch (err) {
+                                console.error(`Error loading leaderboard for group ${group.id}:`, err);
+                                return group;
+                            }
+                        })
+                    );
+
+                    setUserGroups(groupsWithLeaderboards);
                 } catch (error) {
                     console.error("Error loading social data", error);
                 } finally {
@@ -134,13 +158,14 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
             setAddSuccess(`Convite enviado para ${addEmail}!`);
             setAddEmail('');
         } catch (err: any) {
-            // If auto-accepted, it throws an error with a specific message but it's actually a success state for the UI
             if (err.message.includes('Convite aceito automaticamente')) {
                 setAddSuccess(err.message);
                 setAddEmail('');
-                // Refresh friends list
-                const updatedFriends = await firebaseService.getFriendsLeaderboard(uid);
-                setFriends(updatedFriends);
+                const uid = firebaseService.currentUser?.uid;
+                if (uid) {
+                    const updatedFriends = await firebaseService.getFriendsLeaderboard(uid);
+                    setFriends(updatedFriends);
+                }
             } else {
                 setAddError(err.message || 'Erro ao enviar convite.');
             }
@@ -175,7 +200,6 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
         }
     };
 
-    // Group Handlers
     const handleCreateGroup = async () => {
         if (!groupName) return;
         setGroupActionLoading(true);
@@ -187,9 +211,9 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
             const newGroup = await firebaseService.createGroup(uid, groupName, groupDesc);
             setUserGroups(prev => [...prev, { ...newGroup, memberCount: 1 }]);
             setGroupMessage({ type: 'success', text: 'Grupo criado com sucesso!' });
-            setIsCreatingGroup(false);
             setGroupName('');
             setGroupDesc('');
+            setTimeout(() => setGroupMessage({ type: '', text: '' }), 3000);
         } catch (err: any) {
             setGroupMessage({ type: 'error', text: err.message });
         } finally {
@@ -206,11 +230,11 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
 
         try {
             const joinedGroup = await firebaseService.joinGroup(uid, groupCode);
-            // Refresh groups to get full data
             const groupsData = await firebaseService.getUserGroups(uid);
             setUserGroups(groupsData);
             setGroupMessage({ type: 'success', text: `Você entrou no grupo ${joinedGroup.name}!` });
             setGroupCode('');
+            setTimeout(() => setGroupMessage({ type: '', text: '' }), 3000);
         } catch (err: any) {
             setGroupMessage({ type: 'error', text: err.message });
         } finally {
@@ -218,34 +242,28 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
         }
     };
 
-    const loadGroupLeaderboard = async (group: any) => {
-        setLoading(true);
-        try {
-            const members = await firebaseService.getGroupLeaderboard(group.id);
-            // Mark current user
-            const uid = firebaseService.currentUser?.uid;
-            const enhancedMembers = members.map(m => ({ ...m, isMe: m.id === uid }));
-            // Sort
-            enhancedMembers.sort((a, b) => b.score - a.score);
+    const loadGroupMembers = async (groupId: string) => {
+        if (expandedGroup === groupId) {
+            setExpandedGroup(null);
+            return;
+        }
 
-            setActiveGroup({
-                ...group,
-                leaderboard: enhancedMembers
-            });
+        try {
+            const members = await firebaseService.getGroupLeaderboard(groupId);
+            const uid = firebaseService.currentUser?.uid;
+            const enhancedMembers = members.map((m: any) => ({ ...m, isMe: m.id === uid }));
+            enhancedMembers.sort((a: any, b: any) => b.score - a.score);
+
+            setUserGroups(prev => prev.map(g =>
+                g.id === groupId ? { ...g, leaderboard: enhancedMembers } : g
+            ));
+            setExpandedGroup(groupId);
         } catch (err) {
             console.error(err);
-        } finally {
-            setLoading(false);
         }
     };
 
-    // Determine current leaderboard to show
     const leaderboard = useMemo(() => {
-        if (activeGroup) {
-            return activeGroup.leaderboard || [];
-        }
-
-        // Default Global Friends + Me
         const userEntry = {
             id: 'user_me',
             name: profile?.name || 'Eu',
@@ -256,7 +274,7 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
             isMe: true
         };
         return [...friends, userEntry].sort((a, b) => b.score - a.score);
-    }, [userStats, profile, friends, activeGroup]);
+    }, [userStats, profile, friends]);
 
     const userRank = leaderboard.findIndex((u: any) => u.isMe) + 1;
 
@@ -271,7 +289,6 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
         }
     };
 
-    // Fallback image component
     const Avatar = ({ src, alt, className }: any) => {
         const [error, setError] = useState(false);
         if (error) {
@@ -281,265 +298,299 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
     };
 
     return (
-        <div className="pb-24">
-            <header className="mb-6 flex justify-between items-end">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800">Comunidade</h1>
-                    <p className="text-gray-500 text-sm">Conecte-se e compita.</p>
-                </div>
-
-                {/* Toggle View Mode */}
-                <div className="flex bg-gray-100 p-1 rounded-lg">
-                    <button
-                        onClick={() => { setViewMode('friends'); setActiveGroup(null); }}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${viewMode === 'friends' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
-                    >
-                        <Users size={14} /> Amigos
-                    </button>
-                    <button
-                        onClick={() => setViewMode('groups')}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${viewMode === 'groups' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500'}`}
-                    >
-                        <Hash size={14} /> Grupos
-                    </button>
-                </div>
+        <div className="pb-24 space-y-6">
+            <header className="mb-8">
+                <h1 className="text-3xl font-bold text-[#1C1917]">Comunidade</h1>
+                <p className="text-[#78716C] mt-1">Conecte-se e cresça junto com sua tribo.</p>
             </header>
 
-            {/* User Stats Card */}
-            <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-6 text-white mb-8 shadow-lg relative overflow-hidden">
-                <div className="relative z-10">
-                    <h2 className="text-lg font-semibold opacity-90 mb-1">
-                        {activeGroup ? `Ranking: ${activeGroup.name}` : 'Ranking Geral'}
-                    </h2>
-                    <p className="text-3xl font-bold">Você está em {userRank}º</p>
-                    {activeGroup && (
-                        <div className="mt-2 inline-block bg-white/20 px-2 py-1 rounded text-xs font-mono">
-                            Código: {activeGroup.inviteCode}
-                        </div>
-                    )}
-                </div>
-                <Trophy className="absolute right-4 bottom-[-10px] w-32 h-32 text-white opacity-10 rotate-12" />
-            </div>
-
-            {/* FRIENDS MODE ACTIONS */}
-            {viewMode === 'friends' && (
-                <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm mb-8">
-                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2 text-sm"><UserPlus size={16} /> Adicionar Amigo</h3>
-                    <div className="flex gap-2">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-3 top-3 text-gray-400" size={16} />
-                            <input
-                                type="email"
-                                value={addEmail}
-                                onChange={(e) => setAddEmail(e.target.value)}
-                                placeholder="Email do amigo"
-                                className="w-full pl-9 p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-[#44403C]"
-                            />
-                        </div>
-                        <button
-                            onClick={handleSendRequest}
-                            disabled={addLoading || !addEmail}
-                            className="bg-[#1C1917] text-white px-4 rounded-xl font-bold text-sm disabled:opacity-50"
-                        >
-                            {addLoading ? '...' : 'Adicionar'}
-                        </button>
+            {/* Main Content Grid - Rankings First, Actions Below */}
+            <div className="grid md:grid-cols-2 gap-6">
+                {/* LEFT COLUMN: Friends Ranking */}
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-[#1C1917] flex items-center gap-2">
+                            <Users size={20} className="text-indigo-600" /> Ranking de Amigos
+                        </h2>
+                        <span className="text-xs font-bold text-[#A8A29E] bg-[#F5F5F0] px-2 py-1 rounded">
+                            {userRank}º lugar
+                        </span>
                     </div>
-                    {addError && <p className="text-red-500 text-xs mt-2 flex items-center gap-1"><AlertCircle size={12} /> {addError}</p>}
-                    {addSuccess && <p className="text-green-600 text-xs mt-2">{addSuccess}</p>}
 
-                    {(receivedRequests.length > 0 || sentRequests.length > 0) && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                            {receivedRequests.length > 0 && (
-                                <div className="mb-3">
-                                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Convites Recebidos</h4>
-                                    <div className="space-y-2">
-                                        {receivedRequests.map(req => (
-                                            <div key={req.id} className="bg-indigo-50 p-2.5 rounded-lg flex justify-between items-center">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center text-indigo-600 font-bold text-[10px] shadow-sm">
-                                                        {req.name.charAt(0).toUpperCase()}
-                                                    </div>
-                                                    <span className="text-sm font-medium text-indigo-900">{req.name}</span>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => handleAcceptRequest(req.id)} className="text-green-600 hover:bg-green-100 p-1 rounded"><UserCheck size={16} /></button>
-                                                    <button onClick={() => handleRejectRequest(req.id)} className="text-red-500 hover:bg-red-100 p-1 rounded"><X size={16} /></button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                    {/* Friends Leaderboard */}
+                    <div className="bg-white rounded-2xl border border-[#E7E5E4] shadow-sm overflow-hidden">
+                        {loading ? (
+                            <div className="text-center py-8 text-[#A8A29E] text-sm">Carregando...</div>
+                        ) : leaderboard.length === 0 ? (
+                            <div className="p-6 text-center">
+                                <div className="w-16 h-16 bg-[#F5F5F0] rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <Users size={24} className="text-[#A8A29E]" />
                                 </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* GROUPS MODE ACTIONS */}
-            {viewMode === 'groups' && !activeGroup && (
-                <div className="space-y-6 mb-8">
-                    {/* Join Group */}
-                    <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-                        <h3 className="font-bold text-gray-800 mb-3 text-sm">Entrar em um Grupo</h3>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={groupCode}
-                                onChange={(e) => setGroupCode(e.target.value.toUpperCase())}
-                                placeholder="Código do convite (ex: X8A92B)"
-                                className="flex-1 p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-[#44403C] uppercase font-mono"
-                                maxLength={6}
-                            />
-                            <button
-                                onClick={handleJoinGroup}
-                                disabled={groupActionLoading || !groupCode}
-                                className="bg-[#1C1917] text-white px-4 rounded-xl font-bold text-sm disabled:opacity-50"
-                            >
-                                Entrar
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Create Group Toggle */}
-                    {!isCreatingGroup ? (
-                        <button
-                            onClick={() => setIsCreatingGroup(true)}
-                            className="w-full py-3 border border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2"
-                        >
-                            <Plus size={18} /> Criar Novo Grupo
-                        </button>
-                    ) : (
-                        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm animate-fade-in">
-                            <div className="flex justify-between items-center mb-3">
-                                <h3 className="font-bold text-gray-800 text-sm">Novo Grupo</h3>
-                                <button onClick={() => setIsCreatingGroup(false)}><X size={16} className="text-gray-400" /></button>
+                                <p className="text-[#78716C] text-sm font-medium">Nenhum amigo ainda</p>
+                                <p className="text-xs text-[#A8A29E] mt-1">Adicione amigos abaixo para competir!</p>
                             </div>
-                            <div className="space-y-3">
-                                <input
-                                    type="text"
-                                    value={groupName}
-                                    onChange={(e) => setGroupName(e.target.value)}
-                                    placeholder="Nome do Grupo"
-                                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none"
-                                />
-                                <input
-                                    type="text"
-                                    value={groupDesc}
-                                    onChange={(e) => setGroupDesc(e.target.value)}
-                                    placeholder="Descrição (opcional)"
-                                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none"
-                                />
-                                <button
-                                    onClick={handleCreateGroup}
-                                    disabled={groupActionLoading || !groupName}
-                                    className="w-full bg-[#1C1917] text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50"
-                                >
-                                    {groupActionLoading ? 'Criando...' : 'Criar Grupo'}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Feedback Messages */}
-                    {groupMessage.text && (
-                        <div className={`p-3 rounded-xl text-sm flex items-center gap-2 ${groupMessage.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                            <AlertCircle size={16} /> {groupMessage.text}
-                        </div>
-                    )}
-
-                    {/* My Groups List */}
-                    <div>
-                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Meus Grupos</h3>
-                        {userGroups.length === 0 ? (
-                            <p className="text-center text-gray-400 py-4 text-sm">Você não participa de nenhum grupo.</p>
                         ) : (
-                            <div className="grid gap-3">
-                                {userGroups.map(group => (
-                                    <div key={group.id} onClick={() => loadGroupLeaderboard(group)} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm cursor-pointer hover:border-indigo-300 transition group">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <h4 className="font-bold text-gray-800">{group.name}</h4>
-                                                <p className="text-xs text-gray-500 mt-0.5">{group.memberCount} membros</p>
+                            <div className="divide-y divide-[#F5F5F0]">
+                                {leaderboard.slice(0, 8).map((entry: any, index: number) => (
+                                    <div key={entry.id} className={`p-4 flex items-center gap-3 transition-colors ${entry.isMe ? 'bg-indigo-50/50' : 'hover:bg-[#FAFAF9]'}`}>
+                                        <div className="relative flex-shrink-0">
+                                            <Avatar src={entry.avatar} alt={entry.name} className="w-12 h-12 rounded-full border-2 border-white shadow-sm" />
+                                            <div className={`absolute -top-1 -right-1 text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm ${index === 0 ? 'bg-yellow-400 text-yellow-900' :
+                                                index === 1 ? 'bg-gray-300 text-gray-700' :
+                                                    index === 2 ? 'bg-orange-400 text-orange-900' :
+                                                        'bg-[#F5F5F0] text-[#78716C]'
+                                                }`}>
+                                                {index + 1}
                                             </div>
-                                            <span className="bg-indigo-50 text-indigo-600 text-[10px] font-mono px-2 py-1 rounded">{group.inviteCode}</span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className={`font-semibold text-sm truncate ${entry.isMe ? 'text-indigo-700' : 'text-[#1C1917]'}`}>
+                                                {entry.name}{entry.isMe && ' (Você)'}
+                                            </h4>
+                                            <p className="text-xs text-[#78716C] flex items-center gap-1">
+                                                <span>🔥</span> {entry.streak} dias consecutivos
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-right">
+                                                <span className={`block font-bold text-lg ${entry.isMe ? 'text-indigo-600' : 'text-[#44403C]'}`}>
+                                                    {entry.score}
+                                                </span>
+                                                <span className="text-[10px] text-[#A8A29E] uppercase font-bold tracking-wide">pts</span>
+                                            </div>
+                                            {!entry.isMe && (
+                                                <button
+                                                    onClick={() => onViewFriend && onViewFriend(entry.id, entry.name)}
+                                                    className="p-2 bg-[#F5F5F0] rounded-lg text-[#78716C] hover:bg-indigo-50 hover:text-indigo-600 transition"
+                                                    title="Ver perfil"
+                                                >
+                                                    <Eye size={16} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
-                </div>
-            )}
 
-            {/* BACK BUTTON FOR GROUP VIEW */}
-            {viewMode === 'groups' && activeGroup && (
-                <button
-                    onClick={() => setActiveGroup(null)}
-                    className="mb-4 text-sm font-medium text-gray-500 hover:text-gray-800 flex items-center gap-1"
-                >
-                    ← Voltar para Grupos
-                </button>
-            )}
-
-            {/* Leaderboard List (Shared for Friends & Groups) */}
-            <div className="space-y-3">
-                {loading ? (
-                    <div className="text-center py-8 text-gray-400">Carregando...</div>
-                ) : leaderboard.length === 0 ? (
-                    <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                        <p className="text-gray-500 font-medium mb-1">Ninguém aqui ainda</p>
-                    </div>
-                ) : (
-                    leaderboard.map((entry: any, index: number) => (
-                        <div key={entry.id} className={`p-4 rounded-xl shadow-sm flex items-center space-x-4 border ${entry.isMe ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-transparent'}`}>
-                            <div className="relative">
-                                <Avatar src={entry.avatar} alt={entry.name} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" />
-                                <div className={`absolute -top-1 -right-1 text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border border-white ${index < 3 ? 'bg-yellow-400' : 'bg-gray-200'}`}>
-                                    {index + 1}
-                                </div>
-                            </div>
-                            <div className="flex-1">
-                                <h4 className={`font-semibold ${entry.isMe ? 'text-indigo-900' : 'text-gray-900'}`}>
-                                    {entry.name} {entry.isMe && '(Você)'}
-                                </h4>
-                                <p className="text-xs text-gray-500 flex items-center gap-1">
-                                    🔥 {entry.streak} dias seguidos
-                                </p>
-                            </div>
-                            <div className="text-right flex items-center gap-3">
-                                <div>
-                                    <span className="block font-bold text-indigo-600">{entry.score} pts</span>
-                                    <span className="text-xs text-gray-400">{entry.lastActive}</span>
-                                </div>
-                                {!entry.isMe && (
-                                    <button
-                                        onClick={() => {
-                                            if (onViewFriend) {
-                                                onViewFriend(entry.id, entry.name);
-                                            }
-                                        }}
-                                        className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-indigo-100 hover:text-indigo-600 transition z-10 relative cursor-pointer"
-                                        title="Ver Perfil"
-                                    >
-                                        <Eye size={18} />
-                                    </button>
-                                )}
+                    {/* Friend Requests */}
+                    {receivedRequests.length > 0 && (
+                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-2xl border border-indigo-100">
+                            <h4 className="text-xs font-bold text-indigo-900 uppercase mb-3 tracking-wide">Convites Pendentes</h4>
+                            <div className="space-y-2">
+                                {receivedRequests.map(req => (
+                                    <div key={req.id} className="bg-white p-3 rounded-xl flex justify-between items-center shadow-sm">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm">
+                                                {req.name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <span className="text-sm font-semibold text-[#1C1917]">{req.name}</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleAcceptRequest(req.id)} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition" title="Aceitar">
+                                                <UserCheck size={18} />
+                                            </button>
+                                            <button onClick={() => handleRejectRequest(req.id)} className="p-2 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition" title="Recusar">
+                                                <X size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
-                    ))
+                    )}
+                </div>
+
+                {/* RIGHT COLUMN: Groups Ranking */}
+                <div className="space-y-4">
+                    <h2 className="text-lg font-bold text-[#1C1917] flex items-center gap-2">
+                        <Hash size={20} className="text-purple-600" /> Meus Grupos
+                    </h2>
+
+                    {/* Groups List */}
+                    {userGroups.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-[#E7E5E4] shadow-sm p-6 text-center">
+                            <div className="w-16 h-16 bg-[#F5F5F0] rounded-full flex items-center justify-center mx-auto mb-3">
+                                <Hash size={24} className="text-[#A8A29E]" />
+                            </div>
+                            <p className="text-[#78716C] text-sm font-medium">Nenhum grupo ainda</p>
+                            <p className="text-xs text-[#A8A29E] mt-1">Entre ou crie um grupo abaixo!</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {userGroups.map(group => (
+                                <div key={group.id} className="bg-white rounded-2xl border border-[#E7E5E4] shadow-sm overflow-hidden">
+                                    <div className="p-4 bg-[#FAFAF9]">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex-1">
+                                                <h4 className="font-bold text-[#1C1917]">{group.name}</h4>
+                                                <p className="text-xs text-[#78716C] mt-0.5">{group.memberCount} membros</p>
+                                            </div>
+                                            <span className="bg-purple-50 text-purple-700 text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg">
+                                                {group.inviteCode}
+                                            </span>
+                                        </div>
+                                        {group.description && (
+                                            <p className="text-xs text-[#A8A29E] mt-2">{group.description}</p>
+                                        )}
+                                    </div>
+
+                                    {/* Group Members - Always Shown */}
+                                    {group.leaderboard && group.leaderboard.length > 0 && (
+                                        <div className="border-t border-[#F5F5F0] bg-white divide-y divide-[#F5F5F0]">
+                                            {group.leaderboard.map((member: any, idx: number) => (
+                                                <div key={member.id} className={`p-3 flex items-center gap-3 ${member.isMe ? 'bg-purple-50/50' : ''}`}>
+                                                    <div className="relative flex-shrink-0">
+                                                        <Avatar src={member.avatar} alt={member.name} className="w-9 h-9 rounded-full border-2 border-white shadow-sm" />
+                                                        <span className={`absolute -top-1 -right-1 text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white ${idx === 0 ? 'bg-yellow-400 text-yellow-900' : 'bg-[#E7E5E4] text-[#78716C]'
+                                                            }`}>
+                                                            {idx + 1}
+                                                        </span>
+                                                    </div>
+                                                    <span className={`flex-1 font-medium text-sm truncate ${member.isMe ? 'text-purple-700 font-bold' : 'text-[#44403C]'}`}>
+                                                        {member.name}{member.isMe && ' (Você)'}
+                                                    </span>
+                                                    <span className="font-bold text-[#44403C]">{member.score}</span>
+                                                    {!member.isMe && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                onViewFriend && onViewFriend(member.id, member.name);
+                                                            }}
+                                                            className="p-1.5 bg-white hover:bg-purple-50 rounded-lg transition border border-[#E7E5E4]"
+                                                        >
+                                                            <Eye size={14} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Action Cards Below Rankings */}
+            <div className="mt-8 space-y-6">
+                <h3 className="text-sm font-bold text-[#78716C] uppercase tracking-wider">Ações</h3>
+
+                <div className="grid md:grid-cols-3 gap-4">
+                    {/* Add Friend Card */}
+                    <div className="bg-white p-5 rounded-2xl border-2 border-[#E7E5E4] shadow-sm hover:border-indigo-200 hover:shadow-md transition">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="p-2 bg-indigo-50 rounded-lg">
+                                <UserPlus size={18} className="text-indigo-600" />
+                            </div>
+                            <h3 className="font-bold text-[#1C1917]">Adicionar Amigo</h3>
+                        </div>
+                        <div className="space-y-2">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-3 text-[#A8A29E]" size={16} />
+                                <input
+                                    type="email"
+                                    value={addEmail}
+                                    onChange={(e) => setAddEmail(e.target.value)}
+                                    placeholder="Email do amigo"
+                                    className="w-full pl-9 p-2.5 bg-[#F5F5F0] border border-transparent rounded-xl text-sm outline-none focus:border-[#44403C] focus:bg-white transition"
+                                />
+                            </div>
+                            <button
+                                onClick={handleSendRequest}
+                                disabled={addLoading || !addEmail}
+                                className="w-full bg-[#1C1917] text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-black transition shadow-sm"
+                            >
+                                {addLoading ? 'Enviando...' : 'Enviar Convite'}
+                            </button>
+                        </div>
+                        {addError && <p className="text-red-500 text-xs mt-2 flex items-center gap-1"><AlertCircle size={12} /> {addError}</p>}
+                        {addSuccess && <p className="text-green-600 text-xs mt-2 font-medium">{addSuccess}</p>}
+                    </div>
+
+                    {/* Join Group Card */}
+                    <div className="bg-white p-5 rounded-2xl border-2 border-[#E7E5E4] shadow-sm hover:border-purple-200 hover:shadow-md transition">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="p-2 bg-purple-50 rounded-lg">
+                                <Hash size={18} className="text-purple-600" />
+                            </div>
+                            <h3 className="font-bold text-[#1C1917]">Entrar em Grupo</h3>
+                        </div>
+                        <div className="space-y-2">
+                            <input
+                                type="text"
+                                value={groupCode}
+                                onChange={(e) => setGroupCode(e.target.value.toUpperCase())}
+                                placeholder="CÓDIGO"
+                                className="w-full p-2.5 bg-[#F5F5F0] border border-transparent rounded-xl text-sm outline-none focus:border-[#44403C] focus:bg-white uppercase font-mono transition"
+                                maxLength={6}
+                            />
+                            <button
+                                onClick={handleJoinGroup}
+                                disabled={groupActionLoading || !groupCode}
+                                className="w-full bg-[#1C1917] text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-black transition shadow-sm"
+                            >
+                                {groupActionLoading ? 'Entrando...' : 'Entrar'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Create Group Card */}
+                    <div className="bg-white p-5 rounded-2xl border-2 border-[#E7E5E4] shadow-sm hover:border-green-200 hover:shadow-md transition">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="p-2 bg-green-50 rounded-lg">
+                                <Plus size={18} className="text-green-600" />
+                            </div>
+                            <h3 className="font-bold text-[#1C1917]">Criar Grupo</h3>
+                        </div>
+                        <div className="space-y-2">
+                            <input
+                                type="text"
+                                value={groupName}
+                                onChange={(e) => setGroupName(e.target.value)}
+                                placeholder="Nome do Grupo"
+                                className="w-full p-2.5 bg-[#F5F5F0] border border-transparent rounded-xl text-sm outline-none focus:border-[#44403C] focus:bg-white transition"
+                            />
+                            <input
+                                type="text"
+                                value={groupDesc}
+                                onChange={(e) => setGroupDesc(e.target.value)}
+                                placeholder="Descrição (opcional)"
+                                className="w-full p-2.5 bg-[#F5F5F0] border border-transparent rounded-xl text-sm outline-none focus:border-[#44403C] focus:bg-white transition text-xs"
+                            />
+                            <button
+                                onClick={handleCreateGroup}
+                                disabled={groupActionLoading || !groupName}
+                                className="w-full bg-[#1C1917] text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-black transition shadow-sm"
+                            >
+                                {groupActionLoading ? 'Criando...' : 'Criar Grupo'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Feedback Messages */}
+                {groupMessage.text && (
+                    <div className={`p-4 rounded-xl text-sm font-medium flex items-center gap-2 ${groupMessage.type === 'error'
+                        ? 'bg-red-50 text-red-600 border border-red-200'
+                        : 'bg-green-50 text-green-600 border border-green-200'
+                        }`}>
+                        <AlertCircle size={16} /> {groupMessage.text}
+                    </div>
                 )}
             </div>
 
-            {viewMode === 'friends' && (
-                <div className="mt-8 text-center">
-                    <button
-                        onClick={handleShare}
-                        className="bg-white border border-indigo-200 text-indigo-600 px-6 py-3 rounded-xl text-sm font-bold shadow-sm hover:bg-indigo-50 transition inline-flex items-center gap-2"
-                    >
-                        <Share2 size={18} /> Compartilhar meu ID
-                    </button>
-                </div>
-            )}
+            {/* Share Button */}
+            <div className="mt-8 text-center">
+                <button
+                    onClick={handleShare}
+                    className="inline-flex items-center gap-2 bg-white border-2 border-indigo-200 text-indigo-600 px-6 py-3 rounded-xl text-sm font-bold shadow-sm hover:bg-indigo-50 hover:border-indigo-300 transition"
+                >
+                    <Share2 size={18} /> Compartilhar meu progresso
+                </button>
+            </div>
         </div>
     );
 };
