@@ -1,9 +1,7 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { DailyLog, Habit, UserProfile } from '../types';
-
-// Safely get API key or empty string to prevent runtime crash before key selection
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+import { APP_CONFIG } from '../config';
 
 export const generateCoachingAdvice = async (
   profile: UserProfile,
@@ -11,6 +9,11 @@ export const generateCoachingAdvice = async (
   logs: DailyLog
 ): Promise<string> => {
   
+  if (!APP_CONFIG.geminiApiKey || APP_CONFIG.geminiApiKey.includes("PASTE_YOUR")) {
+      return "Erro: Chave API do Google Gemini não configurada em config.ts.";
+  }
+
+  const ai = new GoogleGenAI({ apiKey: APP_CONFIG.geminiApiKey });
   const today = new Date().toISOString().split('T')[0];
   
   // Calculate simplified stats for the prompt
@@ -47,6 +50,6 @@ export const generateCoachingAdvice = async (
     return response.text || "Não foi possível gerar conselhos no momento.";
   } catch (error) {
     console.error("Gemini Error:", error);
-    return "Ocorreu um erro ao contatar seu coach virtual. Verifique sua conexão ou tente novamente mais tarde.";
+    return "Ocorreu um erro ao contatar seu coach virtual. Verifique sua conexão ou a validade da sua chave API.";
   }
 };

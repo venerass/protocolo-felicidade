@@ -6,9 +6,10 @@ import { HabitManager } from './HabitManager';
 
 interface Props {
   onComplete: (profile: UserProfile, customizedHabits: Habit[]) => void;
+  initialName?: string | null;
 }
 
-export const Onboarding: React.FC<Props> = ({ onComplete }) => {
+export const Onboarding: React.FC<Props> = ({ onComplete, initialName }) => {
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   
@@ -28,6 +29,14 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
     screenTimeIssue: true,
     primaryGoals: ['energy']
   });
+
+  // Auto-fill name if provided from Auth
+  useEffect(() => {
+    if (initialName) {
+        setName(initialName);
+        setStep(1); // Skip name input step
+    }
+  }, [initialName]);
 
   const updateAnswer = (key: keyof SurveyAnswers, value: any) => {
     setAnswers(prev => ({ ...prev, [key]: value }));
@@ -113,6 +122,8 @@ export const Onboarding: React.FC<Props> = ({ onComplete }) => {
 
   const handleBack = () => {
     if (step > 0 && step !== 5) {
+        // If we skipped step 0 automatically, don't go back to it
+        if (step === 1 && initialName) return;
         setStep(step - 1);
     }
   };

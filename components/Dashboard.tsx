@@ -12,7 +12,13 @@ interface Props {
 }
 
 export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, onCloseTour, onOpenSettings }) => {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  // Helper for Local Time YYYY-MM-DD
+  const getLocalDate = (date: Date = new Date()) => {
+    // en-CA returns YYYY-MM-DD format
+    return date.toLocaleDateString('en-CA');
+  };
+
+  const [selectedDate, setSelectedDate] = useState(getLocalDate());
   const [tourStep, setTourStep] = useState(0);
 
   // Tour Content
@@ -41,14 +47,20 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, o
     const isDoneToday = !!logs[selectedDate]?.[habit.id];
     
     if (habit.frequencyType === FrequencyType.WEEKLY) {
-      const curr = new Date(selectedDate);
+      // Calculate start of week (Sunday) based on selectedDate
+      const curr = new Date(selectedDate + 'T00:00:00'); 
       const first = curr.getDate() - curr.getDay(); 
-      const firstDay = new Date(new Date(curr).setDate(first)).toISOString().split('T')[0];
+      // Create date object for Sunday
+      const sunday = new Date(curr.setDate(first));
       
       let count = 0;
       for (let i = 0; i < 7; i++) {
-        const d = new Date(new Date(firstDay).setDate(new Date(firstDay).getDate() + i)).toISOString().split('T')[0];
-        if (logs[d]?.[habit.id]) count++;
+        // Create new date for each day of week
+        const d = new Date(sunday);
+        d.setDate(sunday.getDate() + i);
+        const dateStr = getLocalDate(d);
+        
+        if (logs[dateStr]?.[habit.id]) count++;
       }
 
       const isMaxType = habit.unit === 'max_x';
@@ -102,9 +114,9 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, o
     return (
       <div id="date-selector" className="flex gap-2 mb-8 overflow-x-auto no-scrollbar pb-2">
         {dates.map(date => {
-          const dateStr = date.toISOString().split('T')[0];
+          const dateStr = getLocalDate(date);
           const isSelected = dateStr === selectedDate;
-          const isToday = dateStr === new Date().toISOString().split('T')[0];
+          const isToday = dateStr === getLocalDate();
           
           return (
             <button

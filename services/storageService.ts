@@ -1,4 +1,4 @@
-import { DailyLog, Habit, UserProfile } from '../types';
+import { DailyLog, Habit, UserProfile, BackupData } from '../types';
 
 const KEYS = {
   PROFILE: 'happiness_protocol_profile',
@@ -27,6 +27,27 @@ export const storageService = {
   getLogs: (): DailyLog => {
     const data = localStorage.getItem(KEYS.LOGS);
     return data ? JSON.parse(data) : {};
+  },
+  exportData: (): string => {
+    const data: BackupData = {
+      profile: storageService.getProfile(),
+      habits: storageService.getHabits() || [],
+      logs: storageService.getLogs(),
+      timestamp: Date.now()
+    };
+    return JSON.stringify(data, null, 2);
+  },
+  importData: (jsonString: string): boolean => {
+    try {
+      const data: BackupData = JSON.parse(jsonString);
+      if (data.profile) localStorage.setItem(KEYS.PROFILE, JSON.stringify(data.profile));
+      if (data.habits) localStorage.setItem(KEYS.HABITS, JSON.stringify(data.habits));
+      if (data.logs) localStorage.setItem(KEYS.LOGS, JSON.stringify(data.logs));
+      return true;
+    } catch (e) {
+      console.error("Import failed", e);
+      return false;
+    }
   },
   clear: () => {
     localStorage.clear();

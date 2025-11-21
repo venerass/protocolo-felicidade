@@ -1,3 +1,4 @@
+
 export enum Category {
   SAUDE = 'Corpo & Vitalidade',
   MENTE = 'Mente & Espírito',
@@ -26,7 +27,7 @@ export interface Habit {
   timeOfDay: TimeOfDay;
   streak?: number;
   whyChosen?: string; // Reason why this habit was recommended
-  weight: number; // 1 (Low) to 10 (Critical)
+  weight: number; // 1 (Low), 2 (Medium), 3 (High)
 }
 
 export interface SurveyAnswers {
@@ -56,6 +57,7 @@ export interface UserProfile {
   surveyAnswers: SurveyAnswers;
   level: number;
   experience: number;
+  friends?: string[]; // IDs of friends
 }
 
 export interface DailyLog {
@@ -64,4 +66,30 @@ export interface DailyLog {
   };
 }
 
+export interface BackupData {
+  profile: UserProfile | null;
+  habits: Habit[];
+  logs: DailyLog;
+  timestamp: number;
+}
+
+// Abstract Auth User to decouple from Firebase types
+export interface AuthUser {
+    uid: string;
+    email: string | null;
+    displayName: string | null;
+}
+
 export type View = 'dashboard' | 'analytics' | 'social' | 'coach' | 'onboarding' | 'settings';
+
+export interface AppConfiguration {
+  firebase: {
+    apiKey: string;
+    authDomain: string;
+    projectId: string;
+    storageBucket: string;
+    messagingSenderId: string;
+    appId: string;
+  };
+  geminiApiKey: string;
+}

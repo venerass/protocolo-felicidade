@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Habit, Category, FrequencyType, TimeOfDay } from '../types';
 import { HABIT_LIBRARY } from '../constants';
-import { Plus, Trash2, X, Search, ChevronDown, Flame, Shield, Clock, Calendar, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, X, Search, ChevronDown, Flame, Shield, Clock, Calendar, CheckCircle2, ListPlus } from 'lucide-react';
 
 interface Props {
   habits: Habit[];
@@ -122,8 +122,12 @@ export const HabitManager: React.FC<Props> = ({ habits, onUpdateHabits, mode }) 
       {/* HABIT LIST - INLINE EDITABLE */}
       <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 pr-1 -mx-2 px-2 pb-20">
         {habits.length === 0 && (
-          <div className="text-center py-10 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-            <p>Nenhum hábito definido ainda.</p>
+          <div className="flex flex-col items-center justify-center py-12 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+            <div className="p-4 bg-white rounded-full mb-3 shadow-sm">
+                 <ListPlus className="text-gray-300" size={32} />
+            </div>
+            <p className="text-gray-600 font-medium">Seu protocolo está vazio.</p>
+            <p className="text-gray-400 text-xs mt-1">Adicione hábitos para começar.</p>
           </div>
         )}
         
