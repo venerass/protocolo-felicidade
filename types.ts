@@ -58,6 +58,19 @@ export interface UserProfile {
   level: number;
   experience: number;
   friends?: string[]; // IDs of friends
+  friendRequestsSent?: string[]; // IDs of users invite was sent to
+  friendRequestsReceived?: string[]; // IDs of users who sent invite
+  groups?: string[]; // IDs of groups user belongs to
+}
+
+export interface Group {
+    id: string;
+    name: string;
+    description?: string;
+    members: string[]; // User IDs
+    createdBy: string; // User ID
+    createdAt: string;
+    inviteCode: string; // Unique code for joining
 }
 
 export interface DailyLog {

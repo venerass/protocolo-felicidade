@@ -5,13 +5,15 @@ import { Check, Circle, Sun, Moon, Coffee, ArrowRight, X, Settings, Flame, Shiel
 interface Props {
   habits: Habit[];
   logs: DailyLog;
-  onToggle: (habitId: string, date: string, value: any) => void;
-  showTour: boolean;
-  onCloseTour: () => void;
-  onOpenSettings: () => void;
+  onToggle?: (habitId: string, date: string, value: any) => void; // Optional now (for view only)
+  showTour?: boolean;
+  onCloseTour?: () => void;
+  onOpenSettings?: () => void;
+  readOnly?: boolean; // New prop to disable interactions
+  userName?: string; // New prop to show whose dashboard it is
 }
 
-export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, onCloseTour, onOpenSettings }) => {
+export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour = false, onCloseTour = () => {}, onOpenSettings, readOnly = false, userName }) => {
   // Helper for Local Time YYYY-MM-DD
   const getLocalDate = (date: Date = new Date()) => {
     // en-CA returns YYYY-MM-DD format
@@ -180,7 +182,7 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, o
     }
 
     return (
-      <div id={index === 0 ? 'habit-card' : undefined} className={`group relative p-5 rounded-2xl border transition-all duration-300 hover:shadow-md ${bgClass} ${borderClass} hover:border-[#E7E5E4] shadow-sm flex flex-col justify-between h-full`}>
+      <div id={index === 0 ? 'habit-card' : undefined} className={`group relative p-5 rounded-2xl border transition-all duration-300 ${!readOnly && 'hover:shadow-md'} ${bgClass} ${borderClass} ${!readOnly && 'hover:border-[#E7E5E4]'} shadow-sm flex flex-col justify-between h-full`}>
         
         <div className="flex justify-between items-start gap-4 mb-4">
             <div>
@@ -191,8 +193,9 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, o
             </div>
             
             <button 
-                onClick={() => onToggle(habit.id, selectedDate, !status.isDoneToday)}
-                className={`w-12 h-12 rounded-full flex shrink-0 items-center justify-center transition-all duration-300 transform group-hover:scale-105 focus:outline-none ${iconBg} ${iconColor} ${isCompleted ? 'shadow-sm' : ''}`}
+                disabled={readOnly}
+                onClick={() => onToggle && onToggle(habit.id, selectedDate, !status.isDoneToday)}
+                className={`w-12 h-12 rounded-full flex shrink-0 items-center justify-center transition-all duration-300 focus:outline-none ${iconBg} ${iconColor} ${isCompleted ? 'shadow-sm' : ''} ${!readOnly ? 'transform group-hover:scale-105 cursor-pointer' : 'cursor-default opacity-80'}`}
             >
                 {isCompleted ? (
                    isMaxType ? <AlertTriangle size={22} /> : 
@@ -275,8 +278,17 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, o
     <div className="max-w-6xl mx-auto relative">
       <header className="mb-8 flex justify-between items-center">
         <div>
-            <h1 className="text-3xl font-bold text-[#1C1917]">Hoje</h1>
-            <p className="text-[#78716C] mt-1">Construindo sua melhor versão.</p>
+            {userName ? (
+                <>
+                    <h1 className="text-2xl font-bold text-[#1C1917]">{userName}</h1>
+                    <p className="text-[#78716C] text-sm mt-1">Visualizando perfil de amigo.</p>
+                </>
+            ) : (
+                <>
+                    <h1 className="text-3xl font-bold text-[#1C1917]">Hoje</h1>
+                    <p className="text-[#78716C] mt-1">Construindo sua melhor versão.</p>
+                </>
+            )}
         </div>
         
         <div className="flex items-center gap-3">
@@ -284,22 +296,32 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour, o
                 <span className="text-2xl font-bold text-[#1C1917]">{dailyScore}%</span>
                 <span className="text-[10px] uppercase font-bold text-[#78716C] tracking-wider">Score do Dia</span>
             </div>
-            <button 
-                onClick={onOpenSettings}
-                className="p-3 bg-white border border-[#E7E5E4] text-[#44403C] hover:bg-[#FAFAF9] hover:border-[#D6D3D1] rounded-xl transition shadow-sm" 
-                title="Gerenciar Hábitos"
-            >
-                <Settings size={20} />
-            </button>
+            {!readOnly && (
+                <button 
+                    onClick={onOpenSettings}
+                    className="p-3 bg-white border border-[#E7E5E4] text-[#44403C] hover:bg-[#FAFAF9] hover:border-[#D6D3D1] rounded-xl transition shadow-sm" 
+                    title="Gerenciar Hábitos"
+                >
+                    <Settings size={20} />
+                </button>
+            )}
         </div>
       </header>
 
       {renderDateSelector()}
 
-      {renderSection('Manhã', <Sun className="text-orange-400" size={20}/>, 'morning', 0)}
-      {renderSection('Tarde', <Sun className="text-yellow-600" size={20}/>, 'afternoon', 10)}
-      {renderSection('Noite', <Moon className="text-indigo-400" size={20}/>, 'evening', 20)}
-      {renderSection('Hábitos Gerais', <Coffee className="text-[#78716C]" size={20}/>, 'any', 30)}
+      {habits.length === 0 && readOnly ? (
+          <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
+              <p className="text-gray-500">Este usuário ainda não configurou hábitos públicos.</p>
+          </div>
+      ) : (
+        <>
+            {renderSection('Manhã', <Sun className="text-orange-400" size={20}/>, 'morning', 0)}
+            {renderSection('Tarde', <Sun className="text-yellow-600" size={20}/>, 'afternoon', 10)}
+            {renderSection('Noite', <Moon className="text-indigo-400" size={20}/>, 'evening', 20)}
+            {renderSection('Hábitos Gerais', <Coffee className="text-[#78716C]" size={20}/>, 'any', 30)}
+        </>
+      )}
 
       {/* TOUR OVERLAY */}
       {showTour && (

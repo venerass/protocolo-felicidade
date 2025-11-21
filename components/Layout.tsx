@@ -6,9 +6,10 @@ interface Props {
   currentView: View;
   onNavigate: (view: View) => void;
   children: React.ReactNode;
+  hideNav?: boolean;
 }
 
-export const Layout: React.FC<Props> = ({ currentView, onNavigate, children }) => {
+export const Layout: React.FC<Props> = ({ currentView, onNavigate, children, hideNav = false }) => {
   const navItems = [
     { id: 'dashboard', icon: Home, label: 'Hoje' },
     { id: 'analytics', icon: BarChart2, label: 'Progresso' },
@@ -20,6 +21,7 @@ export const Layout: React.FC<Props> = ({ currentView, onNavigate, children }) =
     <div className="flex h-screen bg-[#F5F5F0] text-[#44403C] font-sans overflow-hidden">
       
       {/* DESKTOP SIDEBAR */}
+      {!hideNav && (
       <aside className="hidden md:flex flex-col w-64 bg-[#FAFAF9] border-r border-[#E7E5E4] h-full shadow-sm z-10">
         <div className="p-6 border-b border-[#E7E5E4]">
           <div className="flex items-center gap-2 text-[#57534E]">
@@ -72,6 +74,7 @@ export const Layout: React.FC<Props> = ({ currentView, onNavigate, children }) =
           </div>
         </div>
       </aside>
+      )}
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 h-full overflow-y-auto relative scroll-smooth">
@@ -81,6 +84,7 @@ export const Layout: React.FC<Props> = ({ currentView, onNavigate, children }) =
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION */}
+      {!hideNav && (
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#FAFAF9]/90 backdrop-blur-lg border-t border-[#E7E5E4] px-6 py-3 flex justify-between items-center z-50 pb-safe">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -101,6 +105,7 @@ export const Layout: React.FC<Props> = ({ currentView, onNavigate, children }) =
           );
         })}
       </nav>
+      )}
     </div>
   );
 };

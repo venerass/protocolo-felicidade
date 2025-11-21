@@ -10,7 +10,7 @@ import { Social } from './components/Social';
 import { AIAssistant } from './components/AIAssistant';
 import { Settings } from './components/Settings';
 import { Layout } from './components/Layout';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft } from 'lucide-react';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -22,6 +22,14 @@ const App: React.FC = () => {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [logs, setLogs] = useState<DailyLog>({});
   const [showTour, setShowTour] = useState(false);
+
+  // Friend Profile View State
+  const [viewingFriend, setViewingFriend] = useState<{
+      id: string;
+      name: string;
+      habits: Habit[];
+      logs: DailyLog;
+  } | null>(null);
 
   // Listen to Auth State
   useEffect(() => {
@@ -105,6 +113,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handleViewFriend = async (friendId: string, friendName: string) => {
+      try {
+          const data = await firebaseService.getUserData(friendId);
+          if (data) {
+              setViewingFriend({
+                  id: friendId,
+                  name: friendName,
+                  habits: data.habits,
+                  logs: data.logs
+              });
+          }
+      } catch (error) {
+          console.error("Could not load friend data", error);
+      }
+  };
+
+  const closeFriendView = () => {
+      setViewingFriend(null);
+  };
+
   // 1. Initial Auth Check
   if (isAuthChecking) {
       return (
@@ -139,7 +167,29 @@ const App: React.FC = () => {
     return <Onboarding onComplete={handleOnboardingComplete} initialName={user.displayName} />;
   }
 
-  // 5. Main App
+  // 5. Friend View Mode
+  if (viewingFriend) {
+      return (
+          <Layout currentView={view} onNavigate={setView} hideNav={true}>
+              <div className="p-4">
+                <button 
+                    onClick={closeFriendView}
+                    className="flex items-center gap-2 text-[#78716C] hover:text-[#1C1917] mb-4 font-medium"
+                >
+                    <ArrowLeft size={20}/> Voltar
+                </button>
+                <Dashboard 
+                    habits={viewingFriend.habits} 
+                    logs={viewingFriend.logs} 
+                    readOnly={true}
+                    userName={viewingFriend.name}
+                />
+              </div>
+          </Layout>
+      )
+  }
+
+  // 6. Main App
   return (
     <Layout currentView={view} onNavigate={setView}>
       {view === 'dashboard' && (
@@ -156,7 +206,12 @@ const App: React.FC = () => {
         <Analytics habits={habits} logs={logs} />
       )}
       {view === 'social' && (
-        <Social habits={habits} logs={logs} profile={profile} />
+        <Social 
+            habits={habits} 
+            logs={logs} 
+            profile={profile} 
+            onViewFriend={handleViewFriend}
+        />
       )}
       {view === 'coach' && profile && (
         <AIAssistant profile={profile} habits={habits} logs={logs} />

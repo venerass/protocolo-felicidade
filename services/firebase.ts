@@ -18,13 +18,15 @@ import {
   getDoc, 
   updateDoc, 
   arrayUnion, 
+  arrayRemove,
   collection,
   query,
   where,
   getDocs,
+  addDoc,
   Firestore
 } from 'firebase/firestore';
-import { UserProfile, Habit, DailyLog, AuthUser } from '../types';
+import { UserProfile, Habit, DailyLog, AuthUser, Group } from '../types';
 import { APP_CONFIG } from '../config';
 
 let app: FirebaseApp | undefined;
@@ -87,7 +89,10 @@ export const firebaseService = {
         name: name,
         createdAt: new Date().toISOString(),
         stats: { score: 0, streak: 0 },
-        friends: []
+        friends: [],
+        friendRequestsSent: [],
+        friendRequestsReceived: [],
+        groups: []
     });
     
     return {
@@ -123,7 +128,10 @@ export const firebaseService = {
             name: user.displayName || 'Usuário',
             createdAt: new Date().toISOString(),
             stats: { score: 0, streak: 0 },
-            friends: []
+            friends: [],
+            friendRequestsSent: [],
+            friendRequestsReceived: [],
+            groups: []
         });
     }
 
@@ -171,38 +179,112 @@ export const firebaseService = {
     });
   },
 
-  // 3. SOCIAL FEATURES
+  // 3. SOCIAL FEATURES (Friends)
 
-  addFriendByEmail: async (currentUserId: string, friendEmail: string) => {
+  sendFriendRequest: async (currentUserId: string, friendEmail: string) => {
     if (!db) throw new Error("Database not connected");
-    
+
     const q = query(collection(db, 'users'), where('email', '==', friendEmail.toLowerCase().trim()));
     const querySnapshot = await getDocs(q);
-    
+
     if (querySnapshot.empty) {
         throw new Error('Usuário não encontrado com este email.');
     }
 
     const friendDoc = querySnapshot.docs[0];
-    const friendData = friendDoc.data();
+    const friendId = friendDoc.id;
 
-    if (friendDoc.id === currentUserId) {
+    if (friendId === currentUserId) {
         throw new Error('Você não pode adicionar a si mesmo.');
     }
 
+    // Add to sender's sent requests
     await updateDoc(doc(db, 'users', currentUserId), {
-        friends: arrayUnion(friendDoc.id)
+        friendRequestsSent: arrayUnion(friendId)
     });
 
-    return {
-        id: friendDoc.id,
-        name: friendData.name,
-        avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${friendData.name}`,
-        score: friendData.stats?.score || 0,
-        streak: friendData.stats?.streak || 0,
-        lastActive: 'Hoje',
-        isMe: false
-    };
+    // Add to receiver's received requests
+    await updateDoc(doc(db, 'users', friendId), {
+        friendRequestsReceived: arrayUnion(currentUserId)
+    });
+  },
+
+  acceptFriendRequest: async (currentUserId: string, friendId: string) => {
+    if (!db) throw new Error("Database not connected");
+
+    // Add to both users' friends lists
+    await updateDoc(doc(db, 'users', currentUserId), {
+        friends: arrayUnion(friendId),
+        friendRequestsReceived: arrayRemove(friendId)
+    });
+
+    await updateDoc(doc(db, 'users', friendId), {
+        friends: arrayUnion(currentUserId),
+        friendRequestsSent: arrayRemove(currentUserId)
+    });
+  },
+
+  rejectFriendRequest: async (currentUserId: string, friendId: string) => {
+    if (!db) throw new Error("Database not connected");
+
+    // Remove from requests
+    await updateDoc(doc(db, 'users', currentUserId), {
+        friendRequestsReceived: arrayRemove(friendId)
+    });
+
+    await updateDoc(doc(db, 'users', friendId), {
+        friendRequestsSent: arrayRemove(currentUserId)
+    });
+  },
+
+  getFriendRequests: async (currentUserId: string) => {
+    if (!db) return [];
+    const userSnap = await getDoc(doc(db, 'users', currentUserId));
+    if (!userSnap.exists()) return [];
+
+    const userData = userSnap.data();
+    const receivedIds = userData.friendRequestsReceived || [];
+
+    if (receivedIds.length === 0) return [];
+
+    const requests = await Promise.all(receivedIds.map(async (fid: string) => {
+        const fSnap = await getDoc(doc(db, 'users', fid));
+        if (!fSnap.exists()) return null;
+
+        const fData = fSnap.data();
+        return {
+            id: fid,
+            name: fData.name,
+            email: fData.email
+        };
+    }));
+
+    return requests.filter(r => r !== null);
+  },
+  
+  getSentFriendRequests: async (currentUserId: string) => {
+    if (!db) return [];
+    const userSnap = await getDoc(doc(db, 'users', currentUserId));
+    if (!userSnap.exists()) return [];
+
+    const userData = userSnap.data();
+    const sentIds = userData.friendRequestsSent || [];
+
+    if (sentIds.length === 0) return [];
+
+    const requests = await Promise.all(sentIds.map(async (fid: string) => {
+        const fSnap = await getDoc(doc(db, 'users', fid));
+        if (!fSnap.exists()) return null;
+
+        const fData = fSnap.data();
+        return {
+            id: fid,
+            name: fData.name,
+            email: fData.email
+        };
+    }));
+
+    return requests.filter(r => r !== null);
   },
 
   getFriendsLeaderboard: async (currentUserId: string) => {
@@ -232,5 +314,114 @@ export const firebaseService = {
     }));
 
     return friendsData.filter(f => f !== null);
+  },
+
+  // 4. GROUPS
+  createGroup: async (currentUserId: string, name: string, description: string) => {
+      if (!db) throw new Error("Database not connected");
+      
+      const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      const groupDoc = await addDoc(collection(db, 'groups'), {
+          name,
+          description,
+          createdBy: currentUserId,
+          members: [currentUserId],
+          createdAt: new Date().toISOString(),
+          inviteCode
+      });
+
+      await updateDoc(doc(db, 'users', currentUserId), {
+          groups: arrayUnion(groupDoc.id)
+      });
+
+      return {
+          id: groupDoc.id,
+          name,
+          description,
+          inviteCode
+      };
+  },
+
+  joinGroup: async (currentUserId: string, inviteCode: string) => {
+      if (!db) throw new Error("Database not connected");
+
+      const q = query(collection(db, 'groups'), where('inviteCode', '==', inviteCode.toUpperCase().trim()));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+          throw new Error("Código de convite inválido.");
+      }
+
+      const groupDoc = querySnapshot.docs[0];
+      const groupId = groupDoc.id;
+      const groupData = groupDoc.data();
+
+      if (groupData.members.includes(currentUserId)) {
+          throw new Error("Você já está neste grupo.");
+      }
+
+      await updateDoc(doc(db, 'groups', groupId), {
+          members: arrayUnion(currentUserId)
+      });
+
+      await updateDoc(doc(db, 'users', currentUserId), {
+          groups: arrayUnion(groupId)
+      });
+
+      return {
+          id: groupId,
+          name: groupData.name
+      };
+  },
+
+  getUserGroups: async (currentUserId: string) => {
+      if (!db) return [];
+      const userSnap = await getDoc(doc(db, 'users', currentUserId));
+      if (!userSnap.exists()) return [];
+
+      const groupIds = userSnap.data().groups || [];
+      if (groupIds.length === 0) return [];
+
+      const groups = await Promise.all(groupIds.map(async (gid: string) => {
+          const gSnap = await getDoc(doc(db, 'groups', gid));
+          if (!gSnap.exists()) return null;
+          const gData = gSnap.data();
+          return {
+              id: gid,
+              name: gData.name,
+              description: gData.description,
+              memberCount: gData.members.length,
+              inviteCode: gData.inviteCode
+          };
+      }));
+
+      return groups.filter(g => g !== null);
+  },
+
+  getGroupLeaderboard: async (groupId: string) => {
+    if (!db) return [];
+    const gSnap = await getDoc(doc(db, 'groups', groupId));
+    if (!gSnap.exists()) return [];
+
+    const memberIds = gSnap.data().members || [];
+    
+    const membersData = await Promise.all(memberIds.map(async (mid: string) => {
+        const uSnap = await getDoc(doc(db, 'users', mid));
+        if (!uSnap.exists()) return null;
+        
+        const uData = uSnap.data();
+        return {
+            id: mid,
+            name: uData.name,
+            avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${uData.name}`,
+            score: uData.stats?.score || 0,
+            streak: uData.stats?.streak || 0,
+            lastActive: uData.stats?.lastActive ? new Date(uData.stats.lastActive).toLocaleDateString('pt-BR') : 'Recentemente',
+            isMe: false // Will be set by the UI
+        };
+    }));
+
+    return membersData.filter(m => m !== null);
   }
 };
