@@ -168,7 +168,7 @@ export const Analytics: React.FC<Props> = ({ habits, logs }) => {
 
   // 3. Stats
   const overallConsistency = Math.round(dailyData.reduce((acc, cur) => acc + cur.score, 0) / 7);
-  const perfectDays = dailyData.filter(d => d.score >= 90).length; // 90+ is perfect
+  const perfectDays = dailyData.filter(d => d.score >= 70).length; // 70+ is perfect (Gold)
 
   // 4. Contribution Grid (Last 28 days)
   const getContributionGrid = () => {

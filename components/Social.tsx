@@ -66,12 +66,11 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
                     }
                 });
 
-                habits.filter(h => h.frequencyType === FrequencyType.WEEKLY).forEach(h => {
-                    if (dayLogs[h.id]) achievedWeight += (h.weight || 2);
-                });
+                // REMOVED WEEKLY HABITS BONUS to match Dashboard/Analytics and prevent >100% scores
 
                 if (totalWeight > 0) {
-                    totalScore += Math.round((achievedWeight / totalWeight) * 100);
+                    // Cap at 100%
+                    totalScore += Math.min(100, Math.round((achievedWeight / totalWeight) * 100));
                 }
                 daysCount++;
             }
@@ -360,7 +359,11 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
                                             </div>
                                             {!entry.isMe && (
                                                 <button
-                                                    onClick={() => onViewFriend && onViewFriend(entry.id, entry.name)}
+                                                    onClick={() => {
+                                                        console.log('👁️ Clicked view friend:', entry.id, entry.name);
+                                                        if (onViewFriend) onViewFriend(entry.id, entry.name);
+                                                        else console.warn('⚠️ onViewFriend prop is missing');
+                                                    }}
                                                     className="p-2 bg-[#F5F5F0] rounded-lg text-[#78716C] hover:bg-indigo-50 hover:text-indigo-600 transition"
                                                     title="Ver perfil"
                                                 >

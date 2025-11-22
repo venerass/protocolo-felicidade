@@ -24,7 +24,8 @@ service cloud.firestore {
       
       // Subcollections (like data/protocol)
       match /{document=**} {
-        allow read, write: if isOwner(userId);
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId);
       }
     }
 

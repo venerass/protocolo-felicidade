@@ -141,15 +141,19 @@ const App: React.FC = () => {
   };
 
   const handleViewFriend = async (friendId: string, friendName: string) => {
+    console.log('👀 Viewing friend:', friendName, friendId);
     try {
       const data = await firebaseService.getUserData(friendId);
       if (data) {
+        console.log('✅ Friend data loaded:', data);
         setViewingFriend({
           id: friendId,
           name: friendName,
           habits: data.habits,
           logs: data.logs
         });
+      } else {
+        console.warn('❌ No data found for friend');
       }
     } catch (error) {
       console.error("Could not load friend data", error);
@@ -210,6 +214,7 @@ const App: React.FC = () => {
             logs={viewingFriend.logs}
             readOnly={true}
             userName={viewingFriend.name}
+            comparisonData={{ habits, logs }}
           />
         </div>
       </Layout>

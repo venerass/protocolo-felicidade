@@ -68,9 +68,9 @@ export const migrationService = {
                     // Merge library data with user's personalization
                     return {
                         ...libraryHabit,
-                        enabled: userHabit.enabled, // Keep user's choice
-                        streak: userHabit.streak, // Keep user's progress
-                        whyChosen: userHabit.whyChosen // Keep user's reason
+                        enabled: userHabit.enabled ?? true, // Default to true if undefined
+                        streak: userHabit.streak ?? 0, // Default to 0
+                        whyChosen: userHabit.whyChosen ?? null // Default to null (Firestore doesn't accept undefined)
                     };
                 }
 
