@@ -47,48 +47,86 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
         }
     }, [userStats]);
 
-    // Load Data
+    // Load Data with retry logic
     useEffect(() => {
+        let mounted = true;
+        let retryCount = 0;
+        const maxRetries = 3;
+
         const loadData = async () => {
             const uid = firebaseService.currentUser?.uid;
-            if (uid) {
-                try {
-                    const [friendsData, received, sent, groupsData] = await Promise.all([
-                        firebaseService.getFriendsLeaderboard(uid),
-                        firebaseService.getFriendRequests(uid),
-                        firebaseService.getSentFriendRequests(uid),
-                        firebaseService.getUserGroups(uid)
-                    ]);
 
-                    setFriends(friendsData);
-                    setReceivedRequests(received);
-                    setSentRequests(sent);
+            // Wait for auth if not ready
+            if (!uid) {
+                console.log('⏳ Waiting for user authentication...');
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    setTimeout(() => {
+                        if (mounted) loadData();
+                    }, 1000);
+                }
+                return;
+            }
 
-                    // Load leaderboards for all groups automatically
-                    const groupsWithLeaderboards = await Promise.all(
-                        groupsData.map(async (group: any) => {
-                            try {
-                                const members = await firebaseService.getGroupLeaderboard(group.id);
-                                const enhancedMembers = members.map((m: any) => ({ ...m, isMe: m.id === uid }));
-                                enhancedMembers.sort((a: any, b: any) => b.score - a.score);
-                                return { ...group, leaderboard: enhancedMembers };
-                            } catch (err) {
-                                console.error(`Error loading leaderboard for group ${group.id}:`, err);
-                                return group;
-                            }
-                        })
-                    );
+            if (!mounted) return;
 
-                    setUserGroups(groupsWithLeaderboards);
-                } catch (error) {
-                    console.error("Error loading social data", error);
-                } finally {
+            try {
+                setLoading(true);
+                console.log('📊 Loading social data for user:', uid);
+
+                const [friendsData, received, sent, groupsData] = await Promise.all([
+                    firebaseService.getFriendsLeaderboard(uid),
+                    firebaseService.getFriendRequests(uid),
+                    firebaseService.getSentFriendRequests(uid),
+                    firebaseService.getUserGroups(uid)
+                ]);
+
+                if (!mounted) return;
+
+                console.log('✅ Loaded:', {
+                    friends: friendsData.length,
+                    receivedRequests: received.length,
+                    sentRequests: sent.length,
+                    groups: groupsData.length
+                });
+
+                setFriends(friendsData);
+                setReceivedRequests(received);
+                setSentRequests(sent);
+
+                // Load leaderboards for all groups automatically
+                const groupsWithLeaderboards = await Promise.all(
+                    groupsData.map(async (group: any) => {
+                        try {
+                            const members = await firebaseService.getGroupLeaderboard(group.id);
+                            const enhancedMembers = members.map((m: any) => ({ ...m, isMe: m.id === uid }));
+                            enhancedMembers.sort((a: any, b: any) => b.score - a.score);
+                            return { ...group, leaderboard: enhancedMembers };
+                        } catch (err) {
+                            console.error(`Error loading leaderboard for group ${group.id}:`, err);
+                            return group;
+                        }
+                    })
+                );
+
+                if (!mounted) return;
+                setUserGroups(groupsWithLeaderboards);
+            } catch (error) {
+                console.error("❌ Error loading social data:", error);
+                // Keep existing data, just stop loading
+            } finally {
+                if (mounted) {
                     setLoading(false);
                 }
             }
         };
+
         loadData();
-    }, []);
+
+        return () => {
+            mounted = false;
+        };
+    }, [firebaseService.currentUser?.uid]); // Reload when user changes
 
     const handleSendRequest = async () => {
         if (!addEmail) return;
