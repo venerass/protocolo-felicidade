@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Trophy, Share2, UserPlus, Search, AlertCircle, User as UserIcon, UserCheck, X, Eye, Users, Plus, Hash } from 'lucide-react';
 import { DailyLog, Habit, UserProfile, FrequencyType, Category } from '../types';
 import { firebaseService } from '../services/firebase';
+import { calculateWeeklyAverage, calculateStreak } from '../utils/scoreCalculations';
 
 interface Props {
     habits: Habit[];
@@ -31,63 +32,11 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
     const [groupMessage, setGroupMessage] = useState({ type: '', text: '' });
     const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
-    // Calculate User's Real Score locally (FIXED FOR ALL HABIT TYPES)
+    // Calculate User's Stats using centralized utility
     const userStats = useMemo(() => {
-        const today = new Date();
-        let totalScore = 0;
-        let daysCount = 0;
-
-        for (let i = 0; i < 7; i++) {
-            const d = new Date();
-            d.setDate(today.getDate() - i);
-            const dateStr = d.toLocaleDateString('en-CA');
-
-            if (logs[dateStr]) {
-                const dayLogs = logs[dateStr];
-                const dailyHabits = habits.filter(h => h.frequencyType === FrequencyType.DAILY);
-                let totalWeight = 0;
-                let achievedWeight = 0;
-
-                dailyHabits.forEach(h => {
-                    const weight = h.weight || 2;
-                    totalWeight += weight;
-                    const isDone = !!dayLogs[h.id];
-
-                    // Fix: Handle all three types correctly
-                    if (h.unit === 'max_x') {
-                        // Limit habit: NOT done = good
-                        if (!isDone) achievedWeight += weight;
-                    } else if (h.category === Category.VICIOS) {
-                        // Abstinence: done (checked) = good
-                        if (isDone) achievedWeight += weight;
-                    } else {
-                        // Regular: done = good
-                        if (isDone) achievedWeight += weight;
-                    }
-                });
-
-                // REMOVED WEEKLY HABITS BONUS to match Dashboard/Analytics and prevent >100% scores
-
-                if (totalWeight > 0) {
-                    // Cap at 100%
-                    totalScore += Math.min(100, Math.round((achievedWeight / totalWeight) * 100));
-                }
-                daysCount++;
-            }
-        }
-
-        const avgScore = daysCount > 0 ? Math.round(totalScore / daysCount) : 0;
-
-        let streak = 0;
-        for (let i = 0; i < 30; i++) {
-            const d = new Date();
-            d.setDate(today.getDate() - i);
-            const dateStr = d.toLocaleDateString('en-CA');
-            if (Object.keys(logs[dateStr] || {}).length > 0) streak++;
-            else break;
-        }
-
-        return { score: avgScore, streak };
+        const score = calculateWeeklyAverage(habits, logs);
+        const streak = calculateStreak(logs);
+        return { score, streak };
     }, [habits, logs]);
 
     // Update public stats in backend
@@ -353,9 +302,9 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
                                         <div className="flex items-center gap-3">
                                             <div className="text-right">
                                                 <span className={`block font-bold text-lg ${entry.isMe ? 'text-indigo-600' : 'text-[#44403C]'}`}>
-                                                    {entry.score}
+                                                    {entry.score}%
                                                 </span>
-                                                <span className="text-[10px] text-[#A8A29E] uppercase font-bold tracking-wide">pts</span>
+                                                <span className="text-[10px] text-[#A8A29E] uppercase font-bold tracking-wide">média</span>
                                             </div>
                                             {!entry.isMe && (
                                                 <button
@@ -454,7 +403,10 @@ export const Social: React.FC<Props> = ({ habits, logs, profile, onViewFriend })
                                                     <span className={`flex-1 font-medium text-sm truncate ${member.isMe ? 'text-purple-700 font-bold' : 'text-[#44403C]'}`}>
                                                         {member.name}{member.isMe && ' (Você)'}
                                                     </span>
-                                                    <span className="font-bold text-[#44403C]">{member.score}</span>
+                                                    <div className="text-right">
+                                                        <span className="font-bold text-[#44403C]">{member.score}%</span>
+                                                        <div className="text-[9px] text-[#A8A29E] uppercase font-bold tracking-wide">média</div>
+                                                    </div>
                                                     {!member.isMe && (
                                                         <button
                                                             onClick={(e) => {

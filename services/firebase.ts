@@ -170,9 +170,11 @@ export const firebaseService = {
 
   updatePublicStats: async (userId: string, score: number, streak: number) => {
     if (!db) return;
+    // Ensure score never exceeds 100% before saving
+    const cappedScore = Math.min(100, Math.max(0, score));
     await updateDoc(doc(db, 'users', userId), {
       stats: {
-        score,
+        score: cappedScore,
         streak,
         lastActive: new Date().toISOString()
       }

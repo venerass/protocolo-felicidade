@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Habit, DailyLog, Category, FrequencyType, TimeOfDay } from '../types';
 import { Check, Circle, Sun, Moon, Coffee, ArrowRight, X, Settings, Flame, Shield, ShieldAlert, AlertTriangle, Smile, Meh, Frown, Award, Trophy } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
+import { calculateWeeklyAverage } from '../utils/scoreCalculations';
 
 // Helper to convert 0-100 score back to mood emoji
 const getMoodEmoji = (score: number | null) => {
@@ -222,6 +223,58 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour = 
 
   const myStreak = useMemo(() => comparisonData ? calculateStreak(comparisonData.logs) : 0, [comparisonData]);
   const friendStreak = useMemo(() => calculateStreak(logs), [logs]);
+
+  // Sunday-based weekly average (for main dashboard display) - using centralized utility
+  const currentWeeklyAvg = useMemo(() => calculateWeeklyAverage(habits, logs), [habits, logs]);
+
+  // Weekly average scores for comparison mode - using centralized utility
+  const friendWeeklyAvgScore = useMemo(() => calculateWeeklyAverage(habits, logs), [habits, logs]);
+
+  const myWeeklyAvgScore = useMemo(() => {
+    if (!comparisonData) return 0;
+    return calculateWeeklyAverage(comparisonData.habits, comparisonData.logs);
+  }, [comparisonData]);
+
+  // Category performance for comparison
+  const getCategoryPerformance = (targetHabits: Habit[], targetLogs: DailyLog) => {
+    const categories = Object.values(Category);
+    return categories.map(cat => {
+      const catHabits = targetHabits.filter(h => h.category === cat && h.enabled);
+      if (catHabits.length === 0) return { category: cat, score: 0, count: 0 };
+
+      let totalScore = 0;
+      let daysChecked = 0;
+
+      // Check last 7 days
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = getLocalDate(d);
+
+        catHabits.forEach(h => {
+          const isDone = !!targetLogs[dateStr]?.[h.id];
+          if (h.unit === 'max_x') {
+            if (!isDone) totalScore++;
+          } else if (h.category === Category.VICIOS) {
+            if (isDone) totalScore++;
+          } else {
+            if (isDone) totalScore++;
+          }
+        });
+        daysChecked++;
+      }
+
+      const maxPossible = catHabits.length * daysChecked;
+      const score = maxPossible > 0 ? Math.round((totalScore / maxPossible) * 100) : 0;
+      return { category: cat, score, count: catHabits.length };
+    }).filter(c => c.count > 0);
+  };
+
+  const friendCategoryPerf = useMemo(() => getCategoryPerformance(habits, logs), [habits, logs]);
+  const myCategoryPerf = useMemo(() => {
+    if (!comparisonData) return null;
+    return getCategoryPerformance(comparisonData.habits, comparisonData.logs);
+  }, [comparisonData]);
 
   // Use friend's data as default for single view
   const weeklyProgress = friendWeeklyProgress;
@@ -446,45 +499,95 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour = 
         </div>
 
         {/* Score / Comparison Area */}
-        {comparisonData && myComparisonScore !== null ? (
-          // Comparison Card
-          <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm flex items-center justify-around">
-            <div className="text-center">
-              <span className="text-[10px] uppercase font-bold text-[#78716C] block mb-1">Você</span>
-              <span className={`text-2xl font-bold ${getScoreColor(myComparisonScore)}`}>{myComparisonScore}%</span>
+        {comparisonData ? (
+          // Comparison Card - Weekly Averages + Streaks
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm">
+              <p className="text-[10px] uppercase font-bold text-[#78716C] mb-2">Pontuação Semanal</p>
+              <div className="flex items-center justify-between">
+                <div className="text-center">
+                  <span className="text-xs text-[#78716C] block">Você</span>
+                  <span className={`text-2xl font-bold ${getScoreColor(myWeeklyAvgScore)}`}>{myWeeklyAvgScore}%</span>
+                </div>
+                <div className="h-8 w-[1px] bg-gray-200"></div>
+                <div className="text-center">
+                  <span className="text-xs text-[#78716C] block">{userName?.split(' ')[0]}</span>
+                  <span className={`text-2xl font-bold ${getScoreColor(friendWeeklyAvgScore)}`}>{friendWeeklyAvgScore}%</span>
+                </div>
+              </div>
             </div>
-            <div className="h-8 w-[1px] bg-gray-200"></div>
-            <div className="text-center">
-              <span className="text-[10px] uppercase font-bold text-[#78716C] block mb-1">{userName?.split(' ')[0]}</span>
-              <span className={`text-2xl font-bold ${getScoreColor(dailyScore)}`}>{dailyScore}%</span>
+
+            <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm">
+              <p className="text-[10px] uppercase font-bold text-[#78716C] mb-2">Constância (Streak)</p>
+              <div className="flex items-center justify-between">
+                <div className="text-center">
+                  <span className="text-xs text-[#78716C] block">Você</span>
+                  <div className="flex items-center gap-1">
+                    <Flame size={16} className="text-orange-500" fill="currentColor" />
+                    <span className="text-2xl font-bold text-[#1C1917]">{myStreak}</span>
+                  </div>
+                </div>
+                <div className="h-8 w-[1px] bg-gray-200"></div>
+                <div className="text-center">
+                  <span className="text-xs text-[#78716C] block">{userName?.split(' ')[0]}</span>
+                  <div className="flex items-center gap-1">
+                    <Flame size={16} className="text-orange-500" fill="currentColor" />
+                    <span className="text-2xl font-bold text-[#1C1917]">{friendStreak}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
-          // Daily Score Card (Gold Day)
-          <div className={`p-5 rounded-2xl border flex items-center justify-between relative overflow-hidden transition-all duration-500 ${dailyScore >= 70
-            ? 'bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200 shadow-sm'
-            : 'bg-white border-[#E7E5E4] shadow-sm'
-            }`}>
-            {dailyScore >= 70 && (
-              <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-200/20 rounded-full blur-3xl -mr-10 -mt-10"></div>
-            )}
-
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-[#78716C]">
-                  {dailyScore >= 70 ? '🌟 Dia de Ouro' : 'Score do Dia'}
-                </span>
-                {dailyScore >= 70 && <span className="bg-yellow-100 text-yellow-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-yellow-200">META ATINGIDA</span>}
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className={`text-4xl font-bold ${getScoreColor(dailyScore)}`}>{dailyScore}</span>
-                <span className="text-sm font-bold text-[#A8A29E]">%</span>
+          // Daily Score & Weekly Average - Side by Side
+          <div className="grid grid-cols-2 gap-4">
+            {/* Daily Score */}
+            <div className={`p-4 rounded-2xl border flex flex-col items-center justify-center relative overflow-hidden transition-all duration-500 ${dailyScore >= 70
+              ? 'bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200 shadow-sm'
+              : 'bg-white border-[#E7E5E4] shadow-sm'
+              }`}>
+              {dailyScore >= 70 && (
+                <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-200/20 rounded-full blur-3xl -mr-8 -mt-8"></div>
+              )}
+              <div className="text-center relative z-10">
+                <div className="flex items-center justify-center gap-1.5 mb-2">
+                  <span className="text-[9px] uppercase font-bold tracking-wider text-[#78716C]">
+                    {dailyScore >= 70 ? '🌟 Dia de Ouro' : 'Hoje'}
+                  </span>
+                  {dailyScore >= 70 && <span className="bg-yellow-100 text-yellow-700 text-[8px] font-bold px-1.5 py-0.5 rounded border border-yellow-200">META</span>}
+                </div>
+                <div className="flex items-baseline justify-center gap-1">
+                  <span className={`text-3xl font-bold ${getScoreColor(dailyScore)}`}>{dailyScore}</span>
+                  <span className="text-sm font-bold text-[#A8A29E]">%</span>
+                </div>
               </div>
             </div>
 
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm ${dailyScore >= 70 ? 'bg-gradient-to-br from-yellow-100 to-amber-200 text-yellow-700' : 'bg-[#F5F5F0] text-[#A8A29E]'
-              }`}>
-              {dailyScore >= 70 ? <Trophy size={28} fill="currentColor" className="drop-shadow-sm" /> : <Award size={28} />}
+            {/* Weekly Average */}
+            <div className="p-4 rounded-2xl border bg-white border-[#E7E5E4] shadow-sm flex flex-col items-center justify-center">
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <svg className="w-5 h-5" viewBox="0 0 16 16">
+                    <circle cx="8" cy="8" r="6.5" fill="none" stroke="#E7E5E4" strokeWidth="1.5" />
+                    <circle
+                      cx="8"
+                      cy="8"
+                      r="6.5"
+                      fill="none"
+                      stroke={currentWeeklyAvg >= 70 ? '#15803d' : currentWeeklyAvg >= 50 ? '#eab308' : '#ef4444'}
+                      strokeWidth="1.5"
+                      strokeDasharray={`${(currentWeeklyAvg / 100) * 41} 41`}
+                      strokeLinecap="round"
+                      transform="rotate(-90 8 8)"
+                    />
+                  </svg>
+                  <span className="text-[9px] text-[#78716C] font-bold uppercase tracking-wide">Semana</span>
+                </div>
+                <div className="flex items-baseline justify-center gap-1">
+                  <span className={`text-3xl font-bold ${getScoreColor(currentWeeklyAvg)}`}>{currentWeeklyAvg}</span>
+                  <span className="text-sm font-bold text-[#A8A29E]">%</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -517,24 +620,25 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour = 
               </ResponsiveContainer>
             </div>
 
-            {/* Comparison Chart 2: Balance (Mood) */}
+            {/* Comparison Chart 2: Performance by Category - RADAR */}
             <div className="bg-white p-5 rounded-2xl border border-[#E7E5E4] shadow-sm">
-              <h3 className="text-sm font-bold text-[#78716C] uppercase tracking-wider mb-3">Equilíbrio: Você vs {userName?.split(' ')[0]}</h3>
-              <ResponsiveContainer width="100%" height={150}>
-                <LineChart data={friendWeeklyProgress.map((day, i) => ({
-                  name: day.date.toLocaleDateString('pt-BR', { weekday: 'short' }).slice(0, 3),
-                  FriendMood: day.mood,
-                  MyMood: myWeeklyProgress?.[i]?.mood,
-                  fullDate: day.dateStr
-                }))} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F5F5F0" />
-                  <XAxis dataKey="name" tick={{ fill: '#A8A29E', fontSize: 11 }} axisLine={{ stroke: '#E7E5E4' }} />
-                  <YAxis tick={{ fill: '#A8A29E', fontSize: 11 }} axisLine={{ stroke: '#E7E5E4' }} domain={[0, 100]} />
-                  <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: '#1C1917', color: '#fff' }} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                  <Line name="Você" type="monotone" dataKey="MyMood" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls />
-                  <Line name={userName?.split(' ')[0]} type="monotone" dataKey="FriendMood" stroke="#8B5CF6" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls />
-                </LineChart>
+              <h3 className="text-sm font-bold text-[#78716C] uppercase tracking-wider mb-3">Performance por Categoria</h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <RadarChart data={friendCategoryPerf.map((cat) => ({
+                  category: cat.category.split(' ')[0],
+                  Você: myCategoryPerf?.find(c => c.category === cat.category)?.score || 0,
+                  [userName?.split(' ')[0] || 'Amigo']: cat.score
+                }))}
+                  margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                >
+                  <PolarGrid stroke="#E7E5E4" />
+                  <PolarAngleAxis dataKey="category" tick={{ fill: '#78716C', fontSize: 10 }} />
+                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} />
+                  <Radar name="Você" dataKey="Você" stroke="#10B981" fill="#10B981" fillOpacity={0.3} />
+                  <Radar name={userName?.split(' ')[0] || 'Amigo'} dataKey={userName?.split(' ')[0] || 'Amigo'} stroke="#6366F1" fill="#6366F1" fillOpacity={0.3} />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                  <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', backgroundColor: '#1C1917', color: '#fff', fontSize: '11px' }} />
+                </RadarChart>
               </ResponsiveContainer>
             </div>
           </>
@@ -600,25 +704,6 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour = 
         )}
       </div>
 
-      {/* Stats Comparison */}
-      {comparisonData && (
-        <div className="grid grid-cols-2 gap-4 mb-8">
-          <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm text-center">
-            <p className="text-xs text-[#78716C] uppercase font-bold mb-1">Seu Streak</p>
-            <div className="flex items-center justify-center gap-2">
-              <Flame size={24} className="text-orange-500" fill="currentColor" />
-              <span className="text-2xl font-bold text-[#1C1917]">{myStreak}</span>
-            </div>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm text-center">
-            <p className="text-xs text-[#78716C] uppercase font-bold mb-1">Streak de {userName?.split(' ')[0]}</p>
-            <div className="flex items-center justify-center gap-2">
-              <Flame size={24} className="text-orange-500" fill="currentColor" />
-              <span className="text-2xl font-bold text-[#1C1917]">{friendStreak}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {renderDateSelector()}
 
@@ -634,6 +719,8 @@ export const Dashboard: React.FC<Props> = ({ habits, logs, onToggle, showTour = 
             {renderSection('Tarde', <Sun className="text-yellow-600" size={20} />, 'afternoon', 10)}
             {renderSection('Noite', <Moon className="text-indigo-400" size={20} />, 'evening', 20)}
             {renderSection('Hábitos Gerais', <Coffee className="text-[#78716C]" size={20} />, 'any', 30)}
+            {/* Mobile bottom spacing for better scrolling */}
+            <div className="h-24 md:h-8"></div>
           </>
         )
       )}
